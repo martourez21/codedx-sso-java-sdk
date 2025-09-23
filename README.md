@@ -19,16 +19,16 @@ A professional Java SDK for integrating with the CodedX Single Sign-On service. 
 
 ```xml
 <dependency>
-    <groupId>com.codedx</groupId>
-    <artifactId>codedx-sso-sdk</artifactId>
-    <version>1.0.0</version>
+    <groupId>com.codedstreams</groupId>
+    <artifactId>codedx-sso-java-sdk</artifactId>
+    <version>1.0.1</version>
 </dependency>
 ```
 
 ### Gradle
 
 ```gradle
-implementation 'com.codedx:codedx-sso-sdk:1.0.0'
+implementation 'com.codedstreams:codedx-sso-java-sdk:1.0.1'
 ```
 
 ## Quick Start
