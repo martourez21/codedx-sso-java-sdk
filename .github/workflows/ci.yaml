@@ -25,19 +25,6 @@ jobs:
       - name: Install Maven
         run: sudo apt-get update && sudo apt-get install -y maven
 
-      - name: Configure Maven settings
-        run: |
-          mkdir -p ~/.m2
-          echo "<settings>
-                  <servers>
-                    <server>
-                      <id>github</id>
-                      <username>${{ github.actor }}</username>
-                      <password>${{ secrets.GITHUB_TOKEN }}</password>
-                    </server>
-                  </servers>
-                </settings>" > ~/.m2/settings.xml
-
       - name: Build with Maven (skip tests)
         run: mvn -B clean package -DskipTests -Dmaven.test.skip=true --file pom.xml
 
@@ -67,18 +54,25 @@ jobs:
       - name: Generate Javadocs
         run: mvn javadoc:javadoc
 
+      - name: List generated docs directory
+        run: ls -la target/site/apidocs/ || echo "Javadocs directory not found"
+
       - name: Upload Javadocs
         uses: actions/upload-artifact@v4
         with:
           name: javadocs
           path: target/site/apidocs/
+          retention-days: 1
 
   deploy-docs:
     runs-on: ubuntu-latest
     needs: generate-docs
+    if: github.event_name != 'pull_request'
 
     permissions:
       contents: write
+      pages: write
+      id-token: write
 
     steps:
       - name: Checkout code
@@ -93,54 +87,30 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: javadocs
-          path: .
+          path: _site
 
-      - name: Setup gh-pages branch
-        run: |
-          # Check if the gh-pages branch exists
-          if git ls-remote --exit-code --heads origin gh-pages; then
-            # If the branch exists, create a new orphan branch temporarily
-            git checkout --orphan temp-gh-pages
-            git rm -rf .
-          else
-            # If the branch does not exist, create it as an orphan branch
-            git checkout --orphan gh-pages
-            git rm -rf .
-          fi
+      - name: List downloaded docs
+        run: ls -la _site/ || echo "Downloaded artifacts directory not found"
 
-      - name: Commit and push to gh-pages
-        run: |
-          git add .
-          git commit -m "Deploy Javadocs for ${{ github.sha }}" || echo "No changes to commit"
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
 
-          if git ls-remote --exit-code --heads origin gh-pages; then
-            git push --force origin HEAD:gh-pages
-          else
-            git push origin HEAD:gh-pages
-          fi
-
-      - name: Download Javadocs
-        uses: actions/download-artifact@v4
+      - name: Upload artifact to Pages
+        uses: actions/upload-pages-artifact@v3
         with:
-          name: javadocs
-          path: .
+          path: '_site'
 
-      - name: Commit and push to gh-pages
-        run: |
-          git add .
-          git commit -m "Deploy Javadocs for ${{ github.sha }}" || echo "No changes to commit"
-
-          if git ls-remote --exit-code --heads origin gh-pages; then
-            git push --force origin HEAD:gh-pages
-          else
-            git push origin HEAD:gh-pages
-          fi
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
   deploy-package:
     runs-on: ubuntu-latest
     needs: build
+    if: github.event_name != 'pull_request'
 
     permissions:
+      contents: read
       packages: write
 
     steps:
@@ -152,14 +122,48 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+          server-id: github
+          server-username: ${{ github.actor }}
+          server-password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Maven
         run: sudo apt-get update && sudo apt-get install -y maven
 
-      - name: Clear local Maven repository
-        run: rm -rf ~/.m2/repository/com/codedx-sso-java-sdk/
+      - name: Configure Maven settings
+        run: |
+          mkdir -p ~/.m2
+          echo "<settings>
+                  <servers>
+                    <server>
+                      <id>github</id>
+                      <username>${{ github.actor }}</username>
+                      <password>${{ secrets.GITHUB_TOKEN }}</password>
+                    </server>
+                  </servers>
+                </settings>" > ~/.m2/settings.xml
 
-      - name: Publish to GitHub Packages
-        run: mvn deploy
+      - name: Read version from pom.xml
+        id: version
+        uses: notiz-dev/github-action-json-property@main
+        with:
+          path: pom.xml
+          prop_path: project.version
+
+      - name: Check if version exists
+        run: |
+          VERSION="${{ steps.version.outputs.prop }}"
+          # Check if package version already exists
+          if curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://maven.pkg.github.com/martourez21/codedx-sso-java-sdk/com/codedstreams/codedx-sso-java-sdk/$VERSION/" | grep -q "not found"; then
+            echo "Version $VERSION does not exist, proceeding with deploy"
+            echo "DEPLOY_NEEDED=true" >> $GITHUB_ENV
+          else
+            echo "Version $VERSION already exists, skipping deploy"
+            echo "DEPLOY_NEEDED=false" >> $GITHUB_ENV
+          fi
+
+      - name: Deploy package
+        if: env.DEPLOY_NEEDED == 'true'
+        run: mvn -B deploy -DskipTests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
