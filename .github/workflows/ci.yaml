@@ -64,25 +64,14 @@ jobs:
       - name: Install Maven
         run: sudo apt-get update && sudo apt-get install -y maven
 
-      - name: Generate delomboked sources
-        run: mvn lombok:delombok
-
       - name: Generate Javadocs
         run: mvn javadoc:javadoc
-
-      - name: Verify Javadocs were generated
-        run: |
-          ls -la target/
-          ls -la target/site/ || echo "No site directory found"
-          ls -la target/site/apidocs/ || echo "No apidocs directory found"
-          find target/ -name "*.html" -type f || echo "No HTML files found"
 
       - name: Upload Javadocs
         uses: actions/upload-artifact@v4
         with:
           name: javadocs
           path: target/site/apidocs/
-          if-no-files-found: error
 
   deploy-docs:
     runs-on: ubuntu-latest
@@ -118,11 +107,6 @@ jobs:
         with:
           name: javadocs
           path: .
-
-      - name: Verify downloaded files
-        run: |
-          ls -la
-          find . -name "*.html" -type f || echo "No HTML files found after download"
 
       - name: Commit and push to gh-pages
         run: |
