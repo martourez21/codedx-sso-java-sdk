@@ -93,4 +93,23 @@ public interface SsoAuthenticator {
      * @throws IllegalArgumentException if identifier is null/empty
      */
     void requestPasswordReset(String identifier, boolean isEmail) throws SsoException;
+
+    /**
+     * Verifies a user's account using the code sent via email or SMS.
+     *
+     * @param code the verification code received by the user
+     * @param identifier the user's email or phone number
+     * @throws SsoException if verification fails
+     * @throws IllegalArgumentException if code or identifier is null/empty
+     */
+    void verifyAccount(String code, String identifier) throws SsoException;
+
+    /**
+     * Resends the verification code to the user's email or phone.
+     *
+     * @param identifier the user's email or phone number
+     * @throws SsoException if resend operation fails
+     * @throws IllegalArgumentException if identifier is null/empty
+     */
+    void resendVerificationCode(String identifier) throws SsoException;
 }

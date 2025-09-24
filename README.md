@@ -4,9 +4,10 @@ A professional Java SDK for integrating with the CodedX Single Sign-On service. 
 
 ## Features
 
+- **User Registration**: Create new user accounts with email/phone verification
+- **Account Verification**: Validate user accounts using codes sent via email/SMS
 - **User Authentication**: Login with email or phone number
 - **Token Management**: Automatic token refresh and validation
-- **User Registration**: Create new user accounts
 - **Profile Management**: Retrieve user information
 - **Password Reset**: Request and handle password resets
 - **Comprehensive Error Handling**: Detailed exceptions for easy debugging
@@ -21,7 +22,7 @@ A professional Java SDK for integrating with the CodedX Single Sign-On service. 
 <dependency>
     <groupId>com.codedstreams</groupId>
     <artifactId>codedx-sso-java-sdk</artifactId>
-    <version>1.0.3</version>
+    <version>1.0.4</version>
 </dependency>
 ```
 
@@ -36,9 +37,9 @@ implementation 'com.codedstreams:codedx-sso-java-sdk:1.0.3'
 ### 1. Configure the SDK
 
 ```java
-import com.codedx.sso.sdk.CodedxSsoSdk;
-import com.codedx.sso.sdk.config.SsoConfig;
-import com.codedx.sso.sdk.auth.SsoAuthenticator;
+import com.codedstreams.codedx.sso.sdk.CodedxSsoSdk;
+import com.codedstreams.codedx.sso.sdk.config.SsoConfig;
+import com.codedstreams.codedx.sso.sdk.auth.SsoAuthenticator;
 
 SsoConfig config = SsoConfig.builder()
     .baseUrl("https://sso.yourcompany.com/api/sso")
@@ -54,12 +55,20 @@ CodedxSsoSdk sdk = CodedxSsoSdk.create(config);
 SsoAuthenticator authenticator = sdk.getAuthenticator();
 ```
 
-### 2. User Authentication
+### 2. Complete User Registration and Verification Flow
 
 ```java
 try {
-    // Login with email or phone
-    AuthResponse response = authenticator.login("user@example.com", "password");
+    // Step 1: Register a new user
+    authenticator.registerUser("newuser@example.com", null, "securePassword123");
+    System.out.println("Registration successful! Check your email for verification code.");
+    
+    // Step 2: Verify account using the code sent via email/SMS
+    authenticator.verifyAccount("123456", "newuser@example.com");
+    System.out.println("Account verified successfully!");
+    
+    // Step 3: Now the user can login
+    AuthResponse response = authenticator.login("newuser@example.com", "securePassword123");
     
     // Use the access token for authenticated requests
     String accessToken = response.getAccessToken();
@@ -70,7 +79,7 @@ try {
     System.out.println("Welcome, " + profile.getEmail());
     
 } catch (SsoException e) {
-    System.err.println("Authentication failed: " + e.getMessage());
+    System.err.println("Operation failed: " + e.getMessage());
 }
 ```
 
@@ -87,14 +96,12 @@ boolean isValid = authenticator.validateToken(accessToken);
 authenticator.logout(accessToken);
 ```
 
-### 4. User Registration
+### 4. Resend Verification Code
 
 ```java
-// Register with email
-authenticator.registerUser("newuser@example.com", null, "securePassword123");
-
-// Register with phone
-authenticator.registerUser(null, "+1234567890", "securePassword123");
+// If user didn't receive the verification code
+authenticator.resendVerificationCode("user@example.com");
+System.out.println("Verification code resent successfully!");
 ```
 
 ## Advanced Usage
@@ -106,7 +113,7 @@ authenticator.registerUser(null, "+1234567890", "securePassword123");
 public class SsoConfig {
     
     @Bean
-    @ConfigurationProperties(prefix = "sso")
+    @ConfigurationProperties(prefix = "codedx.sso")
     public SsoConfig ssoConfig() {
         return new SsoConfig();
     }
@@ -134,6 +141,19 @@ public class AuthService {
             throw new AuthenticationServiceException("Authentication failed", e);
         }
     }
+    
+    public void registerAndVerifyUser(String email, String phone, String password, String code) {
+        try {
+            // Register user
+            authenticator.registerUser(email, phone, password);
+            
+            // Verify account using the provided code
+            authenticator.verifyAccount(code, email != null ? email : phone);
+            
+        } catch (SsoException e) {
+            throw new RegistrationException("Registration failed: " + e.getMessage(), e);
+        }
+    }
 }
 ```
 
@@ -141,38 +161,20 @@ public class AuthService {
 
 ```yaml
 # application.yaml
-sso:
-  base-url: https://sso.yourcompany.com/api/sso
-  api-key: ${SSO_API_KEY}
-  api-secret: ${SSO_API_SECRET}
-  client-app-id: ${SSO_CLIENT_APP_ID}
-  connect-timeout: 5000
-  read-timeout: 10000
-  enable-logging: true
-```
-
-## Error Handling
-
-The SDK provides comprehensive error handling through specific exception types:
-
-```java
-try {
-    AuthResponse response = authenticator.login(email, password);
-} catch (AuthenticationException e) {
-    // Handle authentication-specific errors
-    logger.warn("Authentication failed: {}", e.getMessage());
-} catch (SsoException e) {
-    // Handle general SSO errors
-    logger.error("SSO service error: {}", e.getMessage());
-} catch (IllegalArgumentException e) {
-    // Handle invalid parameters
-    logger.error("Invalid parameters: {}", e.getMessage());
-}
+codedx:
+  sso:
+    base-url: https://sso.yourcompany.com/api/sso
+    api-key: ${SSO_API_KEY}
+    api-secret: ${SSO_API_SECRET}
+    client-app-id: ${SSO_CLIENT_APP_ID}
+    connect-timeout: 5000
+    read-timeout: 10000
+    enable-logging: true
 ```
 
 ## Complete Integration Example
 
-### Web Application Integration
+### Web Application Integration with Full Registration Flow
 
 ```java
 @RestController
@@ -185,43 +187,6 @@ public class AuthController {
         this.authenticator = sdk.getAuthenticator();
     }
     
-    @PostMapping("/login")
-    public ResponseEntity<Map<String, Object>> login(@RequestBody LoginRequest request) {
-        try {
-            AuthResponse response = authenticator.login(request.getIdentifier(), request.getPassword());
-            
-            // Set secure HTTP-only cookies
-            ResponseCookie accessTokenCookie = ResponseCookie.from("access_token", response.getAccessToken())
-                .httpOnly(true)
-                .secure(true)
-                .path("/")
-                .maxAge(Duration.ofHours(24))
-                .build();
-                
-            ResponseCookie refreshTokenCookie = ResponseCookie.from("refresh_token", response.getRefreshToken())
-                .httpOnly(true)
-                .secure(true)
-                .path("/")
-                .maxAge(Duration.ofDays(7))
-                .build();
-            
-            return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, accessTokenCookie.toString())
-                .header(HttpHeaders.SET_COOKIE, refreshTokenCookie.toString())
-                .body(Map.of(
-                    "success", true,
-                    "user", response.getUser()
-                ));
-                
-        } catch (SsoException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(Map.of(
-                    "success", false,
-                    "message", "Invalid credentials"
-                ));
-        }
-    }
-    
     @PostMapping("/register")
     public ResponseEntity<Map<String, Object>> register(@RequestBody RegisterRequest request) {
         try {
@@ -229,65 +194,149 @@ public class AuthController {
             
             return ResponseEntity.ok(Map.of(
                 "success", true,
-                "message", "Registration successful. Please check your email for verification."
+                "message": "Registration successful. Please check your email for verification code.",
+                "nextStep": "verify_account"
             ));
             
         } catch (SsoException e) {
             return ResponseEntity.badRequest()
                 .body(Map.of(
                     "success", false,
-                    "message", "Registration failed: " + e.getMessage()
+                    "message": "Registration failed: " + e.getMessage()
+                ));
+        }
+    }
+    
+    @PostMapping("/verify")
+    public ResponseEntity<Map<String, Object>> verifyAccount(
+            @RequestParam String code,
+            @RequestParam String identifier) {
+        
+        try {
+            authenticator.verifyAccount(code, identifier);
+            
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message": "Account verified successfully! You can now login."
+            ));
+            
+        } catch (SsoException e) {
+            return ResponseEntity.badRequest()
+                .body(Map.of(
+                    "success", false,
+                    "message": "Verification failed: " + e.getMessage()
+                ));
+        }
+    }
+    
+    @PostMapping("/resend-verification")
+    public ResponseEntity<Map<String, Object>> resendVerification(@RequestParam String identifier) {
+        try {
+            authenticator.resendVerificationCode(identifier);
+            
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message": "Verification code sent successfully."
+            ));
+            
+        } catch (SsoException e) {
+            return ResponseEntity.badRequest()
+                .body(Map.of(
+                    "success", false,
+                    "message": "Failed to resend verification: " + e.getMessage()
+                ));
+        }
+    }
+    
+    @PostMapping("/login")
+    public ResponseEntity<Map<String, Object>> login(@RequestBody LoginRequest request) {
+        try {
+            AuthResponse response = authenticator.login(request.getIdentifier(), request.getPassword());
+            
+            return ResponseEntity.ok()
+                .body(Map.of(
+                    "success", true,
+                    "user": response.getUser(),
+                    "tokens": Map.of(
+                        "accessToken": response.getAccessToken(),
+                        "refreshToken": response.getRefreshToken(),
+                        "expiresIn": response.getExpiresIn()
+                    )
+                ));
+                
+        } catch (SsoException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of(
+                    "success", false,
+                    "message": "Invalid credentials"
                 ));
         }
     }
 }
 ```
 
-### Mobile App Integration
+### Complete Demo Service Implementation
 
 ```java
-public class AuthManager {
-    private final SsoAuthenticator authenticator;
-    private final SecurePreferences securePreferences;
+@Service
+@RequiredArgsConstructor
+public class SsoService {
     
-    public AuthManager(CodedxSsoSdk sdk, SecurePreferences preferences) {
-        this.authenticator = sdk.getAuthenticator();
-        this.securePreferences = preferences;
-    }
+    private final CodedxSsoSdk ssoSdk;
+    private final UserSessionRepository sessionRepository;
+    private final EventPublisherService eventPublisher;
     
-    public boolean login(String identifier, String password) {
+    public void registerUser(String email, String phoneNumber, String password, String ipAddress) {
         try {
-            AuthResponse response = authenticator.login(identifier, password);
+            ssoSdk.getAuthenticator().registerUser(email, phoneNumber, password);
             
-            // Store tokens securely
-            securePreferences.storeToken("access_token", response.getAccessToken());
-            securePreferences.storeToken("refresh_token", response.getRefreshToken());
-            securePreferences.storeUser(response.getUser());
-            
-            return true;
+            eventPublisher.publishUserEvent("REGISTER",
+                "pending", email, ipAddress, null,
+                Map.of("registrationTime", LocalDateTime.now())
+            );
             
         } catch (SsoException e) {
-            Log.e("AuthManager", "Login failed", e);
-            return false;
+            throw new RuntimeException("Registration failed: " + e.getMessage(), e);
         }
     }
     
-    public boolean refreshToken() {
+    public void verifyAccount(String code, String identifier, String ipAddress) {
         try {
-            String refreshToken = securePreferences.getRefreshToken();
-            if (refreshToken == null) return false;
+            ssoSdk.getAuthenticator().verifyAccount(code, identifier);
             
-            AuthResponse response = authenticator.refreshToken(refreshToken);
-            
-            // Update stored tokens
-            securePreferences.storeToken("access_token", response.getAccessToken());
-            securePreferences.storeToken("refresh_token", response.getRefreshToken());
-            
-            return true;
+            eventPublisher.publishUserEvent("ACCOUNT_VERIFIED",
+                "pending", identifier, ipAddress, null,
+                Map.of("verificationTime", LocalDateTime.now())
+            );
             
         } catch (SsoException e) {
-            Log.e("AuthManager", "Token refresh failed", e);
-            return false;
+            throw new RuntimeException("Verification failed: " + e.getMessage(), e);
+        }
+    }
+    
+    public void resendVerification(String identifier, String ipAddress) {
+        try {
+            ssoSdk.getAuthenticator().resendVerificationCode(identifier);
+            
+            eventPublisher.publishUserEvent("VERIFICATION_RESENT",
+                "pending", identifier, ipAddress, null,
+                Map.of("resendTime", LocalDateTime.now())
+            );
+            
+        } catch (SsoException e) {
+            throw new RuntimeException("Failed to resend verification: " + e.getMessage(), e);
+        }
+    }
+    
+    public AuthResponse login(String identifier, String password, String ipAddress, String userAgent) {
+        try {
+            AuthResponse response = ssoSdk.getAuthenticator().login(identifier, password);
+            
+            // Store session and publish events...
+            return response;
+            
+        } catch (SsoException e) {
+            throw new RuntimeException("Login failed: " + e.getMessage(), e);
         }
     }
 }
@@ -299,13 +348,36 @@ public class AuthManager {
 
 | Method | Description | Parameters |
 |--------|-------------|------------|
+| `registerUser()` | Create new user account | email, phoneNumber, password |
+| `verifyAccount()` | Verify account using code | code, identifier |
+| `resendVerificationCode()` | Resend verification code | identifier |
 | `login()` | Authenticate user | identifier, password |
 | `refreshToken()` | Refresh access token | refreshToken |
 | `logout()` | Invalidate session | accessToken |
 | `getUserProfile()` | Get user information | accessToken |
 | `validateToken()` | Check token validity | accessToken |
-| `registerUser()` | Create new user | email, phoneNumber, password |
 | `requestPasswordReset()` | Initiate password reset | identifier, isEmail |
+
+### Complete Registration Flow
+
+1. **User Registration**
+   ```java
+   authenticator.registerUser("user@example.com", null, "password123");
+   ```
+
+2. **System Sends Verification Code** (handled by SSO service)
+   - Email: 6-digit code sent to user's email
+   - SMS: 6-digit code sent to user's phone
+
+3. **Account Verification**
+   ```java
+   authenticator.verifyAccount("123456", "user@example.com");
+   ```
+
+4. **User Login** (after successful verification)
+   ```java
+   AuthResponse response = authenticator.login("user@example.com", "password123");
+   ```
 
 ### Response Models
 
@@ -330,87 +402,112 @@ public class AuthManager {
 
 ## Best Practices
 
-### 1. Token Storage
-```java
-// Web: Use HTTP-only cookies
-ResponseCookie tokenCookie = ResponseCookie.from("access_token", token)
-    .httpOnly(true)
-    .secure(true)
-    .sameSite("Strict")
-    .build();
+### 1. Complete Registration Flow Implementation
 
-// Mobile: Use secure storage
-KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
-keyStore.load(null);
-```
-
-### 2. Error Handling
 ```java
-public class GlobalExceptionHandler {
+@Service
+public class RegistrationService {
     
-    @ExceptionHandler(SsoException.class)
-    public ResponseEntity<ErrorResponse> handleSsoException(SsoException e) {
-        ErrorResponse error = new ErrorResponse(
-            "AUTHENTICATION_ERROR",
-            "Authentication service unavailable",
-            HttpStatus.SERVICE_UNAVAILABLE.value()
-        );
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(error);
+    public RegistrationResult registerUser(RegistrationRequest request) {
+        try {
+            // Step 1: Register user
+            authenticator.registerUser(request.getEmail(), request.getPhone(), request.getPassword());
+            
+            // Step 2: Store pending verification (optional)
+            verificationService.storePendingVerification(request.getEmail());
+            
+            return RegistrationResult.success("Verification code sent to your email");
+            
+        } catch (SsoException e) {
+            return RegistrationResult.error("Registration failed: " + e.getMessage());
+        }
+    }
+    
+    public VerificationResult verifyAccount(String email, String code) {
+        try {
+            // Step 3: Verify account
+            authenticator.verifyAccount(code, email);
+            
+            // Step 4: Activate user account
+            userService.activateUser(email);
+            
+            return VerificationResult.success("Account verified successfully");
+            
+        } catch (SsoException e) {
+            return VerificationResult.error("Verification failed: " + e.getMessage());
+        }
     }
 }
 ```
 
-### 3. Configuration Management
+### 2. Error Handling for Verification Flow
+
 ```java
-@Component
-public class SsoConfigProvider {
+@ControllerAdvice
+public class AuthExceptionHandler {
     
-    @Value("${sso.base-url}") private String baseUrl;
-    @Value("${sso.api-key}") private String apiKey;
+    @ExceptionHandler(VerificationException.class)
+    public ResponseEntity<ErrorResponse> handleVerificationException(VerificationException e) {
+        ErrorResponse error = new ErrorResponse(
+            "VERIFICATION_ERROR",
+            e.getMessage(),
+            Map.of("canRetry", true, "maxAttempts", 3)
+        );
+        return ResponseEntity.badRequest().body(error);
+    }
     
-    @Bean
-    public CodedxSsoSdk ssoSdk() {
-        // Get secrets from secure source
-        String apiSecret = getSecretFromVault("sso-api-secret");
-        
-        SsoConfig config = SsoConfig.builder()
-            .baseUrl(baseUrl)
-            .apiKey(apiKey)
-            .apiSecret(apiSecret)
-            .clientAppId("my-app")
-            .build();
-            
-        return CodedxSsoSdk.create(config);
+    @ExceptionHandler(AccountNotVerifiedException.class)
+    public ResponseEntity<ErrorResponse> handleUnverifiedAccount(AccountNotVerifiedException e) {
+        ErrorResponse error = new ErrorResponse(
+            "ACCOUNT_NOT_VERIFIED",
+            "Please verify your account before logging in",
+            Map.of("resendUrl", "/api/auth/resend-verification")
+        );
+        return ResponseEntity.status(403).body(error);
     }
 }
 ```
 
 ## Troubleshooting
 
-### Common Issues
+### Common Registration & Verification Issues
 
-1. **Connection Timeouts**
+1. **Verification Code Expired**
    ```java
-   SsoConfig config = SsoConfig.builder()
-       .connectTimeout(10000)  // Increase timeout
-       .readTimeout(30000)
-       .build();
+   // Resend a new code
+   try {
+       authenticator.resendVerificationCode("user@example.com");
+   } catch (SsoException e) {
+       // Handle resend failure
+   }
    ```
 
-2. **SSL Certificate Issues**
+2. **Invalid Verification Code**
    ```java
-   // For development only - disable SSL verification
-   System.setProperty("jdk.internal.httpclient.disableHostnameVerification", "true");
+   // Typically allows 3 attempts before locking
+   try {
+       authenticator.verifyAccount("wrongcode", "user@example.com");
+   } catch (SsoException e) {
+       if (e.getMessage().contains("invalid code")) {
+           // Inform user to try again
+       }
+   }
    ```
 
-3. **Authentication Failures**
-    - Verify API keys are correct
-    - Check client application is active
-    - Ensure proper scopes are configured
+3. **Account Already Verified**
+   ```java
+   try {
+       authenticator.verifyAccount("123456", "user@example.com");
+   } catch (SsoException e) {
+       if (e.getMessage().contains("already verified")) {
+           // Redirect to login page
+       }
+   }
+   ```
 
 ### Debug Mode
 
-Enable detailed logging for troubleshooting:
+Enable detailed logging for troubleshooting the complete flow:
 
 ```java
 SsoConfig config = SsoConfig.builder()
@@ -419,13 +516,13 @@ SsoConfig config = SsoConfig.builder()
 ```
 
 ```properties
-# Logback configuration
+# Logback configuration for complete flow tracking
 <logger name="com.codedstreams.codedx.sso.sdk" level="DEBUG"/>
 ```
 
 ## Support
 
-- **Documentation**: [CodedX SSO Documentation](https://docs.codedx.com/sso)
+- **Documentation**: [CodedX SSO Documentation](https://martourez21.github.io/codedx-sso-java-sdk/)
 - **API Reference**: Generate with `mvn javadoc:javadoc`
 - **Issues**: [GitHub Issues](https://github.com/martourez21/codedx-sso/issues)
 - **Contact**: nestorabiawuh@gmail.com
@@ -438,6 +535,12 @@ This SDK follows [Semantic Versioning](https://semver.org/):
 - **PATCH** version for bug fixes
 
 ## Changelog
+
+### v1.0.4
+- Added account verification methods (`verifyAccount`, `resendVerificationCode`)
+- Complete registration flow implementation
+- Enhanced error handling for verification process
+- Improved documentation with complete flow examples
 
 ### v1.0.0
 - Initial release
@@ -452,7 +555,7 @@ This SDK is licensed under the MIT License. See [LICENSE](LICENSE) file for deta
 
 ## Contributing
 
-I welcome contributions! Please just fork and follow along or you can reach out on LinkedIn or mail.
+I welcome contributions! Please just fork and follow along or you can reach out on LinkedIn or just send a mail using my email.
 
 ---
 

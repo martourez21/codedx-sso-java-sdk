@@ -251,4 +251,52 @@ public class SsoAuthenticatorImpl implements SsoAuthenticator {
         if (identifier == null) return "***";
         return identifier.contains("@") ? maskEmail(identifier) : maskPhone(identifier);
     }
+
+    @Override
+    public void verifyAccount(String code, String identifier) throws SsoException {
+        validateNotEmpty(code, "code");
+        validateNotEmpty(identifier, "identifier");
+
+        try {
+            log.debug("Verifying account for identifier: {} with code: {}",
+                    maskIdentifier(identifier), maskCode(code));
+
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("code", code);
+            requestBody.put("identifier", identifier);
+            requestBody.put("clientAppId", config.getClientAppId());
+
+            httpClient.post("/auth/verify", requestBody);
+            log.info("Account verification successful for: {}", maskIdentifier(identifier));
+
+        } catch (Exception e) {
+            log.error("Account verification failed for: {}", maskIdentifier(identifier), e);
+            throw new SsoException("Account verification failed: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void resendVerificationCode(String identifier) throws SsoException {
+        validateNotEmpty(identifier, "identifier");
+
+        try {
+            log.debug("Resending verification code for identifier: {}", maskIdentifier(identifier));
+
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("identifier", identifier);
+            requestBody.put("clientAppId", config.getClientAppId());
+
+            httpClient.post("/auth/verify/resend", requestBody);
+            log.info("Verification code resent successfully to: {}", maskIdentifier(identifier));
+
+        } catch (Exception e) {
+            log.error("Failed to resend verification code to: {}", maskIdentifier(identifier), e);
+            throw new SsoException("Failed to resend verification code: " + e.getMessage(), e);
+        }
+    }
+
+    private String maskCode(String code) {
+        if (code == null || code.length() < 2) return "***";
+        return code.charAt(0) + "***" + code.charAt(code.length() - 1);
+    }
 }
