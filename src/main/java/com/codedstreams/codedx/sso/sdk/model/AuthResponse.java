@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
  * </p>
  *
  * @author Nestor Martourez
- * @version 1.0.0
+ * @version 1.0.5
  * @since 1.0.0
  */
 @Data

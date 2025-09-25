@@ -9,7 +9,7 @@ package com.codedstreams.codedx.sso.sdk;
  * <p><b>Note:</b> This class is intended for documentation purposes only and should not be instantiated.</p>
  *
  * @author Nestor Martourez
- * @version 1.0.4
+ * @version 1.0.5
  * @since 1.0.0
  * @see com.codedstreams.codedx.sso.sdk.CodedxSsoSdk
  * @see com.codedstreams.codedx.sso.sdk.auth.SsoAuthenticator

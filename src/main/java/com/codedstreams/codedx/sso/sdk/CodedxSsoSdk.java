@@ -26,7 +26,7 @@ import lombok.extern.slf4j.Slf4j;
  * }</pre>
  *
  * @author Nestor Martourez
- * @version 1.0.0
+ * @version 1.0.5
  * @since 1.0.0
  */
 @Slf4j

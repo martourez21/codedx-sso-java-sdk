@@ -20,7 +20,7 @@ import java.util.Map;
  * </p>
  *
  * @author Nestor Martourez
- * @version 1.0.0
+ * @version 1.0.5
  * @since 1.0.0
  */
 @Slf4j
@@ -190,6 +190,66 @@ public class SsoAuthenticatorImpl implements SsoAuthenticator {
         }
     }
 
+
+    @Override
+    public void verifyAccount(String code, String identifier) throws SsoException {
+        validateNotEmpty(code, "code");
+        validateNotEmpty(identifier, "identifier");
+
+        try {
+            log.debug("Verifying account for identifier: {} with code: {}",
+                    maskIdentifier(identifier), maskCode(code));
+
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("identifier", identifier);  // Field order matches VerificationRequest
+            requestBody.put("code", code);
+            requestBody.put("isEmail", identifier.contains("@"));
+
+
+            httpClient.post("/auth/verify/confirm", requestBody);
+            log.info("Account verification successful for: {}", maskIdentifier(identifier));
+
+        } catch (Exception e) {
+            log.error("Account verification failed for: {} with code: {}",
+                    maskIdentifier(identifier), maskCode(code), e);
+
+            String errorMessage = e.getMessage();
+            if (errorMessage.contains("User not found")) {
+                throw new SsoException("Account not found. Please check the identifier and try again.", e);
+            } else if (errorMessage.contains("Invalid verification code")) {
+                throw new SsoException("Invalid verification code. Please check the code and try again.", e);
+            } else {
+                throw new SsoException("Account verification failed: " + errorMessage, e);
+            }
+        }
+    }
+
+    @Override
+    public void resendVerificationCode(String identifier) throws SsoException {
+        validateNotEmpty(identifier, "identifier");
+
+        try {
+            log.debug("Resending verification code for identifier: {}", maskIdentifier(identifier));
+
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("identifier", identifier);
+
+            try {
+                httpClient.post("/auth/verify/resend", requestBody);
+                log.info("Verification code resent successfully to: {}", maskIdentifier(identifier));
+            } catch (SsoException e) {
+                if (e.getMessage().contains("404") || e.getMessage().contains("Not Found")) {
+                    throw new SsoException("Resend verification is not currently available. Please try registering again or contact support.", e);
+                }
+                throw e; // Re-throw other errors
+            }
+
+        } catch (Exception e) {
+            log.error("Failed to resend verification code to: {}", maskIdentifier(identifier), e);
+            throw new SsoException("Failed to resend verification code: " + e.getMessage(), e);
+        }
+    }
+
     /**
      * Validates that a string is not null or empty.
      *
@@ -252,49 +312,12 @@ public class SsoAuthenticatorImpl implements SsoAuthenticator {
         return identifier.contains("@") ? maskEmail(identifier) : maskPhone(identifier);
     }
 
-    @Override
-    public void verifyAccount(String code, String identifier) throws SsoException {
-        validateNotEmpty(code, "code");
-        validateNotEmpty(identifier, "identifier");
-
-        try {
-            log.debug("Verifying account for identifier: {} with code: {}",
-                    maskIdentifier(identifier), maskCode(code));
-
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("code", code);
-            requestBody.put("identifier", identifier);
-            requestBody.put("clientAppId", config.getClientAppId());
-
-            httpClient.post("/auth/verify", requestBody);
-            log.info("Account verification successful for: {}", maskIdentifier(identifier));
-
-        } catch (Exception e) {
-            log.error("Account verification failed for: {}", maskIdentifier(identifier), e);
-            throw new SsoException("Account verification failed: " + e.getMessage(), e);
-        }
-    }
-
-    @Override
-    public void resendVerificationCode(String identifier) throws SsoException {
-        validateNotEmpty(identifier, "identifier");
-
-        try {
-            log.debug("Resending verification code for identifier: {}", maskIdentifier(identifier));
-
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("identifier", identifier);
-            requestBody.put("clientAppId", config.getClientAppId());
-
-            httpClient.post("/auth/verify/resend", requestBody);
-            log.info("Verification code resent successfully to: {}", maskIdentifier(identifier));
-
-        } catch (Exception e) {
-            log.error("Failed to resend verification code to: {}", maskIdentifier(identifier), e);
-            throw new SsoException("Failed to resend verification code: " + e.getMessage(), e);
-        }
-    }
-
+    /**
+     * Masks a verification code for logging.
+     *
+     * @param code the verification code to mask
+     * @return masked code
+     */
     private String maskCode(String code) {
         if (code == null || code.length() < 2) return "***";
         return code.charAt(0) + "***" + code.charAt(code.length() - 1);
