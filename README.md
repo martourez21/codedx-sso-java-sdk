@@ -22,7 +22,7 @@ A professional Java SDK for integrating with the CodedX Single Sign-On service. 
 <dependency>
     <groupId>com.codedstreams</groupId>
     <artifactId>codedx-sso-java-sdk</artifactId>
-    <version>1.0.4</version>
+    <version>1.0.5</version>
 </dependency>
 ```
 
